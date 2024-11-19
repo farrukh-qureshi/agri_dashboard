@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 import os
 import json
+from sklearn.covariance import EllipticEnvelope
 
 DATA_DIR = "data"
 if not os.path.exists(DATA_DIR):
@@ -11,22 +12,28 @@ if not os.path.exists(DATA_DIR):
 def clean_weather_data(df):
     """Clean the dataframe by removing outliers and invalid values"""
     # Remove -999 values which indicate missing data
-    df = df.replace(-999, pd.NA)
+    numerical_cols = df.select_dtypes(include=['float64', 'int64']).columns
+    numerical_cols = [col for col in numerical_cols if col != 'Date']
     
-    # Remove rows where any of the main parameters are missing
-    df = df.dropna(subset=['T2M', 'RH2M', 'WS2M'])
+    # Remove rows where any parameters are missing
+    df = df.dropna(subset=numerical_cols)
     
-    # Remove statistical outliers (values outside 3 standard deviations)
-    for column in ['T2M', 'RH2M', 'WS2M']:
-        mean = df[column].mean()
-        std = df[column].std()
-        df = df[df[column].between(mean - 3*std, mean + 3*std)]
+    # Use Robust Covariance Estimation for outlier detection
+    outlier_detector = EllipticEnvelope(
+        contamination=0.1,
+        random_state=42,
+        support_fraction=0.8
+    )
     
-    # Ensure humidity is between 0 and 100
-    df = df[df['RH2M'].between(0, 100)]
+    # Fit and predict outliers
+    outlier_labels = outlier_detector.fit_predict(df[numerical_cols])
+    df = df[outlier_labels == 1]
     
-    # Ensure temperature is within reasonable range (-50°C to 60°C)
-    df = df[df['T2M'].between(-50, 60)]
+    # Apply basic physical constraints
+    if 'RH2M' in df.columns:
+        df = df[df['RH2M'].between(0, 100)]
+    if 'T2M' in df.columns:
+        df = df[df['T2M'].between(-50, 60)]
     
     return df
 
@@ -39,7 +46,7 @@ def get_weather_data(latitude, longitude, start_date, end_date):
     """Get weather data from NASA POWER API or cached file"""
     cache_file = get_cached_filename(start_date, end_date, latitude, longitude)
     
-    # Check if we have recent cached data (less than 1 hour old)
+    # Check if we have recent cached data
     if os.path.exists(cache_file):
         file_age = datetime.now().timestamp() - os.path.getmtime(cache_file)
         if file_age < 3600:  # 1 hour in seconds
@@ -50,7 +57,7 @@ def get_weather_data(latitude, longitude, start_date, end_date):
             except Exception as e:
                 print(f"Error reading cached file: {e}")
     
-    url = f"https://power.larc.nasa.gov/api/temporal/hourly/point"
+    url = "https://power.larc.nasa.gov/api/temporal/hourly/point"
     params = {
         "parameters": "T2M,RH2M,WS2M",
         "community": "AG",
@@ -70,7 +77,7 @@ def get_weather_data(latitude, longitude, start_date, end_date):
             df[key] = list(value.values())
         df['Date'] = list(parameter_data['T2M'].keys())
         
-        # Convert the date string to datetime properly
+        # Convert the date string to datetime
         df['Date'] = df['Date'].apply(lambda x: 
             datetime.strptime(str(x), '%Y%m%d%H'))
         
@@ -85,14 +92,23 @@ def get_weather_data(latitude, longitude, start_date, end_date):
         print(f"Failed to retrieve data. Status code: {response.status_code}")
         return None
 
-def get_last_30_days_data():
-    """Get data for the last 30 days"""
+def get_historical_data(days=30, latitude=32.68, longitude=71.78):
+    """Get data for the specified number of past days and location
+    
+    Args:
+        days (int): Number of past days to fetch data for (default: 30)
+        latitude (float): Latitude of the location (default: 32.68)
+        longitude (float): Longitude of the location (default: 71.78)
+    """
     end_date = datetime.now()
-    start_date = end_date - timedelta(days=30)
+    start_date = end_date - timedelta(days=days)
     
     return get_weather_data(
-        latitude=32.68,
-        longitude=71.78,
+        latitude=latitude,
+        longitude=longitude,
         start_date=start_date.strftime("%Y%m%d"),
         end_date=end_date.strftime("%Y%m%d")
-    ) 
+    )
+
+# Make sure functions are available for import
+__all__ = ['get_historical_data', 'get_weather_data', 'clean_weather_data']
