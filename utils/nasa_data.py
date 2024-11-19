@@ -35,6 +35,10 @@ def clean_weather_data(df):
     if 'T2M' in df.columns:
         df = df[df['T2M'].between(-50, 60)]
     
+    # Add precipitation constraints
+    if 'PRECTOTCORR' in df.columns:
+        df = df[df['PRECTOTCORR'].between(0, 500)]  # Max 500mm per hour is a reasonable limit
+    
     return df
 
 def get_cached_filename(start_date, end_date, latitude, longitude):
@@ -59,7 +63,7 @@ def get_weather_data(latitude, longitude, start_date, end_date):
     
     url = "https://power.larc.nasa.gov/api/temporal/hourly/point"
     params = {
-        "parameters": "T2M,RH2M,WS2M",
+        "parameters": "T2M,RH2M,WS2M,PRECTOTCORR",
         "community": "AG",
         "longitude": longitude,
         "latitude": latitude,
