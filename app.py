@@ -85,9 +85,9 @@ def main():
         
         # Initialize default coordinates (Pakistan)
         if 'latitude' not in st.session_state:
-            st.session_state.latitude = 32.66
-            st.session_state.longitude = 71.81
-        
+            st.session_state.latitude = 32.6689
+            st.session_state.longitude = 71.8107
+
         latitude = st.session_state.latitude
         longitude = st.session_state.longitude
         zoom_level = 5
