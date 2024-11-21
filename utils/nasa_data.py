@@ -105,22 +105,26 @@ def get_weather_data(latitude, longitude, start_date, end_date):
         return None
 
 def get_historical_data(days=30, latitude=32.68, longitude=71.78):
-    """Get data for the specified number of past days and location
-    
-    Args:
-        days (int): Number of past days to fetch data for (default: 30)
-        latitude (float): Latitude of the location (default: 32.68)
-        longitude (float): Longitude of the location (default: 71.78)
-    """
+    """Get data for the specified number of past days and location"""
     end_date = datetime.now()
     start_date = end_date - timedelta(days=days)
     
-    return get_weather_data(
+    df = get_weather_data(
         latitude=latitude,
         longitude=longitude,
         start_date=start_date.strftime("%Y%m%d"),
         end_date=end_date.strftime("%Y%m%d")
     )
+    
+    if df is not None:
+        # Ensure Date column is datetime
+        df['Date'] = pd.to_datetime(df['Date'])
+        # Sort by date
+        df = df.sort_values('Date')
+        # Reset index
+        df = df.reset_index(drop=True)
+        
+    return df
 
 # Make sure functions are available for import
 __all__ = ['get_historical_data', 'get_weather_data', 'clean_weather_data']
