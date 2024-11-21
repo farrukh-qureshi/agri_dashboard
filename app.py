@@ -148,8 +148,8 @@ def main():
                 time_value = st.slider(
                     "Select number of years",
                     min_value=1,
-                    max_value=10,
-                    value=1,
+                    max_value=15,
+                    value=10,
                     help="Choose number of years to fetch historical weather data for"
                 )
                 time_unit = "years"
