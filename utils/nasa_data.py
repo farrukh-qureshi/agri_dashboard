@@ -5,6 +5,7 @@ import os
 import json
 from sklearn.covariance import EllipticEnvelope
 from io import StringIO
+from utils.cache_utils import save_cached_data, load_cached_data, DataTracker, get_cached_filename
 
 DATA_DIR = "data"
 if not os.path.exists(DATA_DIR):
@@ -104,27 +105,55 @@ def get_weather_data(latitude, longitude, start_date, end_date):
         print(f"Failed to retrieve data. Status code: {response.status_code}")
         return None
 
-def get_historical_data(days=30, latitude=32.68, longitude=71.78):
-    """Get data for the specified number of past days and location"""
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=days)
+def get_historical_data(days: int = None, latitude: float = None, longitude: float = None, 
+                       start_date: datetime.date = None, end_date: datetime.date = None):
+    """Get historical weather data with smart tracking and caching"""
+    tracker = DataTracker()
     
+    if start_date and end_date:
+        # Convert date to datetime for consistent handling
+        actual_start_date = datetime.combine(start_date, datetime.min.time())
+        actual_end_date = datetime.combine(end_date, datetime.max.time())
+        days = (end_date - start_date).days + 1
+    else:
+        # Use days-based range
+        actual_end_date = datetime.now()
+        actual_start_date = actual_end_date - timedelta(days=days)
+
+    # Check if we have matching data
+    cached_file = tracker.find_matching_data(
+        latitude, longitude, actual_start_date, actual_end_date
+    )
+    
+    if cached_file:
+        # Load and filter the cached data
+        df = pd.read_csv(cached_file)
+        df['Date'] = pd.to_datetime(df['Date'])
+        df = df[
+            (df['Date'].dt.date >= actual_start_date.date()) & 
+            (df['Date'].dt.date <= actual_end_date.date())
+        ]
+        return df, True  # True indicates cache hit
+    
+    # If no cache available, fetch new data
     df = get_weather_data(
         latitude=latitude,
         longitude=longitude,
-        start_date=start_date.strftime("%Y%m%d"),
-        end_date=end_date.strftime("%Y%m%d")
+        start_date=actual_start_date.strftime("%Y%m%d"),
+        end_date=actual_end_date.strftime("%Y%m%d")
     )
     
-    if df is not None:
-        # Ensure Date column is datetime
-        df['Date'] = pd.to_datetime(df['Date'])
-        # Sort by date
-        df = df.sort_values('Date')
-        # Reset index
-        df = df.reset_index(drop=True)
-        
-    return df
+    if df is not None and not df.empty:
+        # Save the new data and track it
+        filename = get_cached_filename(latitude, longitude, actual_start_date, actual_end_date)
+        df.to_csv(filename, index=False)
+        tracker.add_data_entry(
+            latitude, longitude, 
+            actual_start_date, actual_end_date, 
+            filename
+        )
+    
+    return df, False  # False indicates new data fetch
 
 # Make sure functions are available for import
 __all__ = ['get_historical_data', 'get_weather_data', 'clean_weather_data']
