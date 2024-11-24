@@ -1,15 +1,16 @@
-import streamlit as st
 import plotly.express as px
 import pandas as pd
 from datetime import datetime
 from utils.wind_analysis import display_wind_analysis
 import plotly.graph_objects as go
 import numpy as np
+import streamlit as st
 from utils.prediction import (
     prepare_data_for_prophet,
     train_prophet_model,
     make_future_predictions,
-    plot_predictions
+    plot_predictions,
+    evaluate_model_performance
 )
 
 # Add PARAMETERS dictionary at the module level
@@ -125,11 +126,16 @@ def interpret_temperature_pattern(temp_stats, stress_data):
     
     return interpretations
 
-def display_weather_insights(df: pd.DataFrame, latitude: float, longitude: float, days: int):
+def display_weather_insights(df, latitude, longitude, days, parameters=None):
     """Display comprehensive weather insights and visualizations"""
     if df is None or df.empty:
         st.error("❌ No data available for visualization")
         return
+
+    # Use passed parameters or default to app's PARAMETERS if not provided
+    if parameters is None:
+        from app import PARAMETERS
+        parameters = PARAMETERS
 
     # Create main tabs for different sections
     main_tabs = st.tabs([
@@ -138,7 +144,7 @@ def display_weather_insights(df: pd.DataFrame, latitude: float, longitude: float
         "💧 Humidity", 
         "🌧️ Precipitation",
         "🌪️ Wind Analysis",
-        "🔮 Predictions",  # New tab
+        "🔮 Predictions",
         "🌾 Agricultural Insights", 
         "📥 Export"
     ])
@@ -181,7 +187,7 @@ def display_weather_insights(df: pd.DataFrame, latitude: float, longitude: float
             fig = go.Figure()
 
             # Add each parameter
-            for param_name, param_info in PARAMETERS.items():
+            for param_name, param_info in parameters.items():
                 col = param_info['column']
                 if col in df_sample.columns:
                     # Normalize the data
@@ -212,15 +218,15 @@ def display_weather_insights(df: pd.DataFrame, latitude: float, longitude: float
             st.error(f"Error creating combined trends plot: {str(e)}")
 
     with main_tabs[1]:  # Temperature Tab
-        display_parameter_analysis(df, 'Temperature', PARAMETERS['Temperature'])
+        display_parameter_analysis(df, 'Temperature', parameters['Temperature'])
         display_enhanced_temperature_analysis(df)
 
     with main_tabs[2]:  # Humidity Tab
-        display_parameter_analysis(df, 'Humidity', PARAMETERS['Humidity'])
+        display_parameter_analysis(df, 'Humidity', parameters['Humidity'])
         display_enhanced_humidity_analysis(df)
 
     with main_tabs[3]:  # Precipitation Tab
-        display_parameter_analysis(df, 'Precipitation', PARAMETERS['Precipitation'])
+        display_parameter_analysis(df, 'Precipitation', parameters['Precipitation'])
         display_enhanced_precipitation_analysis(df)
 
     with main_tabs[4]:  # Wind Analysis Tab
@@ -230,49 +236,103 @@ def display_weather_insights(df: pd.DataFrame, latitude: float, longitude: float
         st.markdown("### 🔮 Weather Predictions")
         st.markdown("Forecasting weather parameters for the next 48 hours")
         
-        # Create subtabs for different parameters
-        pred_tabs = st.tabs([
-            "🌡️ Temperature",
-            "💧 Humidity",
-            "🌧️ Precipitation",
-            "💨 Wind Speed"
-        ])
+        # Get the date range of available data
+        data_start = df['Date'].min()
+        data_end = df['Date'].max()
         
-        for pred_tab, (param_name, param_info) in zip(pred_tabs, PARAMETERS.items()):
-            with pred_tab:
-                try:
-                    with st.spinner(f"Generating {param_name.lower()} forecast..."):
-                        # Prepare data
-                        prophet_df = prepare_data_for_prophet(df, param_info['column'])
-                        
-                        # Train model
-                        model = train_prophet_model(prophet_df, param_info['column'])
-                        
-                        # Make predictions
-                        forecast = make_future_predictions(model)
-                        
-                        # Plot results
-                        fig = plot_predictions(prophet_df, forecast, param_name, param_info)
-                        st.plotly_chart(fig, use_container_width=True)
+        # Allow user to select training cutoff date
+        st.markdown("### 📊 Model Evaluation Settings")
+        evaluation_mode = st.checkbox("Enable Model Evaluation", 
+                                    help="Compare predictions with actual values",
+                                    value=False)
+        
+        # Initialize variables
+        training_data = df.copy()
+        test_data = None
+        show_predictions = True
 
-                        # Display key predictions
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.markdown("#### Next 24 Hours")
-                            next_24h = forecast[['ds', 'yhat']].tail(24).copy()
-                            next_24h['ds'] = next_24h['ds'].dt.strftime('%Y-%m-%d %H:00')
-                            next_24h.columns = ['Time', param_name]
-                            st.dataframe(next_24h, hide_index=True)
-                        
-                        with col2:
-                            st.markdown("#### Key Statistics")
-                            future_vals = forecast['yhat'].tail(48)
-                            st.metric("Maximum", f"{future_vals.max():.1f} {param_info['unit']}")
-                            st.metric("Minimum", f"{future_vals.min():.1f} {param_info['unit']}")
-                            st.metric("Average", f"{future_vals.mean():.1f} {param_info['unit']}")
+        if evaluation_mode:
+            cutoff_date = st.date_input(
+                "Select Training Cutoff Date",
+                value=data_end - pd.Timedelta(days=7),
+                min_value=data_start.date(),
+                max_value=data_end.date() - pd.Timedelta(days=2),
+                help="Model will be trained on data up to this date and evaluated on subsequent data"
+            )
+            
+            # Convert to datetime and set time to end of day
+            cutoff_datetime = pd.to_datetime(cutoff_date) + pd.Timedelta(days=1) - pd.Timedelta(seconds=1)
+            
+            # Split data
+            training_data = df[df['Date'] <= cutoff_datetime].copy()
+            test_data = df[df['Date'] > cutoff_datetime].copy()
+            
+            if len(test_data) < 24:
+                st.warning("⚠️ Insufficient data after cutoff date for evaluation (need at least 24 hours)")
+                show_predictions = False
+            else:
+                st.info(f"Training data: {len(training_data)} records ({training_data['Date'].min().date()} to {training_data['Date'].max().date()})")
+                st.info(f"Test data: {len(test_data)} records ({test_data['Date'].min().date()} to {test_data['Date'].max().date()})")
 
-                except Exception as e:
-                    st.error(f"Error generating {param_name.lower()} forecast: {str(e)}")
+        if show_predictions:
+            # Create subtabs for different parameters
+            pred_tabs = st.tabs([
+                "🌡️ Temperature",
+                "💧 Humidity",
+                "🌧️ Precipitation",
+                "💨 Wind Speed"
+            ])
+            
+            for pred_tab, (param_name, param_info) in zip(pred_tabs, parameters.items()):
+                with pred_tab:
+                    try:
+                        with st.spinner(f"Generating {param_name.lower()} forecast..."):
+                            # Rest of your prediction code...
+                            prophet_df = prepare_data_for_prophet(training_data, param_info['column'])
+                            model = train_prophet_model(prophet_df, param_info['column'])
+                            
+                            if evaluation_mode and test_data is not None:
+                                # Evaluation code...
+                                hours_to_predict = len(test_data)
+                                forecast = make_future_predictions(model, hours=hours_to_predict)
+                                test_prophet_df = prepare_data_for_prophet(test_data, param_info['column'])
+                                metrics, eval_fig = evaluate_model_performance(
+                                    forecast, test_prophet_df, param_name, cutoff_datetime
+                                )
+                                
+                                if metrics and eval_fig:
+                                    st.markdown("#### Model Performance Metrics")
+                                    col1, col2, col3, col4 = st.columns(4)
+                                    col1.metric("MAPE", f"{metrics['MAPE']:.1f}%")
+                                    col2.metric("MAE", f"{metrics['MAE']:.2f}")
+                                    col3.metric("RMSE", f"{metrics['RMSE']:.2f}")
+                                    col4.metric("Within CI", f"{metrics['Within CI']:.1f}%")
+                                    st.plotly_chart(eval_fig, use_container_width=True)
+                            
+                            # Future predictions
+                            forecast_future = make_future_predictions(model, hours=48)
+                            fig = plot_predictions(prophet_df, forecast_future, param_name, param_info)
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                            # Display predictions table and statistics
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.markdown("#### Next 24 Hours")
+                                next_24h = forecast_future[['ds', 'yhat']].tail(24).copy()
+                                next_24h['ds'] = next_24h['ds'].dt.strftime('%Y-%m-%d %H:00')
+                                next_24h.columns = ['Time', param_name]
+                                st.dataframe(next_24h, hide_index=True)
+                            
+                            with col2:
+                                st.markdown("#### Key Statistics")
+                                future_vals = forecast_future['yhat'].tail(48)
+                                st.metric("Maximum", f"{future_vals.max():.1f} {param_info['unit']}")
+                                st.metric("Minimum", f"{future_vals.min():.1f} {param_info['unit']}")
+                                st.metric("Average", f"{future_vals.mean():.1f} {param_info['unit']}")
+
+                    except Exception as e:
+                        st.error(f"Error generating {param_name.lower()} forecast: {str(e)}")
+                        st.exception(e)
 
     with main_tabs[6]:  # Agricultural Insights Tab
         # Calculate necessary statistics
