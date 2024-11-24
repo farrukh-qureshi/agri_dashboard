@@ -119,8 +119,10 @@ def main():
         # Time range selector with custom date option
         time_range = st.radio(
             "📅 Select Training Data Range",
-            options=["Recent Days", "Historical Years", "Custom Date Range"],
-            help="Choose between recent daily data, historical yearly data, or custom date range"
+            options=["Recent Days"],
+            # help="Choose between recent daily data, historical yearly data, or custom date range"
+            # options=["Recent Days", "Historical Years", "Custom Date Range"],
+            # help="Choose between recent daily data, historical yearly data, or custom date range"
         )
         
         with st.form("prediction_form"):
@@ -132,43 +134,43 @@ def main():
                 days = st.slider(
                     "Select number of days for training",
                     min_value=30,
-                    max_value=90,
+                    max_value=120,
                     value=60,
                     help="More historical data might improve prediction accuracy"
                 )
                 time_value = days
                 time_unit = "days"
-            elif time_range == "Historical Years":
-                time_value = st.slider(
-                    "Select number of years",
-                    min_value=1,
-                    max_value=5,
-                    value=1,
-                    help="Choose number of years for historical training data"
-                )
-                time_unit = "years"
-                st.warning("⚠️ Fetching multiple years of data may take several minutes.")
-            else:  # Custom Date Range
-                col1, col2 = st.columns(2)
-                with col1:
-                    start_date = st.date_input(
-                        "Start Date",
-                        value=datetime.now() - timedelta(days=60),
-                        max_value=datetime.now().date(),
-                        help="Select start date for training data"
-                    )
-                with col2:
-                    end_date = st.date_input(
-                        "End Date",
-                        value=datetime.now().date(),
-                        max_value=datetime.now().date(),
-                        min_value=start_date,
-                        help="Select end date for training data"
-                    )
+            # elif time_range == "Historical Years":
+            #     time_value = st.slider(
+            #         "Select number of years",
+            #         min_value=1,
+            #         max_value=5,
+            #         value=1,
+            #         help="Choose number of years for historical training data"
+            #     )
+            #     time_unit = "years"
+            #     st.warning("⚠️ Fetching multiple years of data may take several minutes.")
+            # else:  # Custom Date Range
+            #     col1, col2 = st.columns(2)
+            #     with col1:
+            #         start_date = st.date_input(
+            #             "Start Date",
+            #             value=datetime.now() - timedelta(days=60),
+            #             max_value=datetime.now().date(),
+            #             help="Select start date for training data"
+            #         )
+            #     with col2:
+            #         end_date = st.date_input(
+            #             "End Date",
+            #             value=datetime.now().date(),
+            #             max_value=datetime.now().date(),
+            #             min_value=start_date,
+            #             help="Select end date for training data"
+            #         )
                 
-                if start_date > end_date:
-                    st.error("Error: End date must be after start date")
-                time_unit = "custom"
+            #     if start_date > end_date:
+            #         st.error("Error: End date must be after start date")
+            #     time_unit = "custom"
             
             submitted = st.form_submit_button("🔮 Generate Predictions")
 
