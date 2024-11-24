@@ -142,8 +142,8 @@ def main():
                 time_value = st.slider(
                     "Select number of years",
                     min_value=1,
-                    max_value=15,
-                    value=5,
+                    max_value=5,
+                    value=1,
                     help="Choose number of years for historical training data"
                 )
                 time_unit = "years"
