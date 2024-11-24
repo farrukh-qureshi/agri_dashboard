@@ -5,23 +5,34 @@ from datetime import datetime
 from utils.wind_analysis import display_wind_analysis
 import plotly.graph_objects as go
 import numpy as np
+from utils.prediction import (
+    prepare_data_for_prophet,
+    train_prophet_model,
+    make_future_predictions,
+    plot_predictions
+)
 
-# Move parameters dictionary to module level
-parameters = {
+# Add PARAMETERS dictionary at the module level
+PARAMETERS = {
     'Temperature': {
         'column': 'T2M',
-        'color': 'red',
+        'color': '#FF4B4B',  # red
         'unit': '°C'
     },
     'Humidity': {
         'column': 'RH2M',
-        'color': 'blue',
+        'color': '#4B4BFF',  # blue
         'unit': '%'
     },
     'Precipitation': {
         'column': 'PRECTOTCORR',
-        'color': 'purple',
+        'color': '#9D4BFF',  # purple
         'unit': 'mm/hour'
+    },
+    'Wind Speed': {
+        'column': 'WS2M',
+        'color': '#4BFF4B',  # green
+        'unit': 'm/s'
     }
 }
 
@@ -126,7 +137,8 @@ def display_weather_insights(df: pd.DataFrame, latitude: float, longitude: float
         "🌡️ Temperature", 
         "💧 Humidity", 
         "🌧️ Precipitation",
-        "🌪️ Wind Analysis", 
+        "🌪️ Wind Analysis",
+        "🔮 Predictions",  # New tab
         "🌾 Agricultural Insights", 
         "📥 Export"
     ])
@@ -169,7 +181,7 @@ def display_weather_insights(df: pd.DataFrame, latitude: float, longitude: float
             fig = go.Figure()
 
             # Add each parameter
-            for param_name, param_info in parameters.items():
+            for param_name, param_info in PARAMETERS.items():
                 col = param_info['column']
                 if col in df_sample.columns:
                     # Normalize the data
@@ -200,21 +212,69 @@ def display_weather_insights(df: pd.DataFrame, latitude: float, longitude: float
             st.error(f"Error creating combined trends plot: {str(e)}")
 
     with main_tabs[1]:  # Temperature Tab
-        display_parameter_analysis(df, 'Temperature', parameters['Temperature'])
+        display_parameter_analysis(df, 'Temperature', PARAMETERS['Temperature'])
         display_enhanced_temperature_analysis(df)
 
     with main_tabs[2]:  # Humidity Tab
-        display_parameter_analysis(df, 'Humidity', parameters['Humidity'])
+        display_parameter_analysis(df, 'Humidity', PARAMETERS['Humidity'])
         display_enhanced_humidity_analysis(df)
 
     with main_tabs[3]:  # Precipitation Tab
-        display_parameter_analysis(df, 'Precipitation', parameters['Precipitation'])
+        display_parameter_analysis(df, 'Precipitation', PARAMETERS['Precipitation'])
         display_enhanced_precipitation_analysis(df)
 
     with main_tabs[4]:  # Wind Analysis Tab
         display_wind_analysis(df)
 
-    with main_tabs[5]:  # Agricultural Insights Tab
+    with main_tabs[5]:  # Predictions Tab
+        st.markdown("### 🔮 Weather Predictions")
+        st.markdown("Forecasting weather parameters for the next 48 hours")
+        
+        # Create subtabs for different parameters
+        pred_tabs = st.tabs([
+            "🌡️ Temperature",
+            "💧 Humidity",
+            "🌧️ Precipitation",
+            "💨 Wind Speed"
+        ])
+        
+        for pred_tab, (param_name, param_info) in zip(pred_tabs, PARAMETERS.items()):
+            with pred_tab:
+                try:
+                    with st.spinner(f"Generating {param_name.lower()} forecast..."):
+                        # Prepare data
+                        prophet_df = prepare_data_for_prophet(df, param_info['column'])
+                        
+                        # Train model
+                        model = train_prophet_model(prophet_df, param_info['column'])
+                        
+                        # Make predictions
+                        forecast = make_future_predictions(model)
+                        
+                        # Plot results
+                        fig = plot_predictions(prophet_df, forecast, param_name, param_info)
+                        st.plotly_chart(fig, use_container_width=True)
+
+                        # Display key predictions
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.markdown("#### Next 24 Hours")
+                            next_24h = forecast[['ds', 'yhat']].tail(24).copy()
+                            next_24h['ds'] = next_24h['ds'].dt.strftime('%Y-%m-%d %H:00')
+                            next_24h.columns = ['Time', param_name]
+                            st.dataframe(next_24h, hide_index=True)
+                        
+                        with col2:
+                            st.markdown("#### Key Statistics")
+                            future_vals = forecast['yhat'].tail(48)
+                            st.metric("Maximum", f"{future_vals.max():.1f} {param_info['unit']}")
+                            st.metric("Minimum", f"{future_vals.min():.1f} {param_info['unit']}")
+                            st.metric("Average", f"{future_vals.mean():.1f} {param_info['unit']}")
+
+                except Exception as e:
+                    st.error(f"Error generating {param_name.lower()} forecast: {str(e)}")
+
+    with main_tabs[6]:  # Agricultural Insights Tab
         # Calculate necessary statistics
         stress_df = get_temperature_stress_periods(df)
         temp_stats = df['T2M'].describe()
@@ -270,7 +330,7 @@ def display_weather_insights(df: pd.DataFrame, latitude: float, longitude: float
             for interpretation in temp_interpretations:
                 st.markdown(f"- {interpretation}")
 
-    with main_tabs[6]:  # Export Tab
+    with main_tabs[7]:  # Export Tab
         # Data Download Option
         st.markdown("### 📥 Download Data")
         csv = df.to_csv(index=False)

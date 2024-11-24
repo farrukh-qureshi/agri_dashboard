@@ -6,10 +6,34 @@ from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut, GeocoderServiceError
 from utils.nasa_data import get_historical_data
 from utils.visualization import display_weather_insights
+from utils.prediction import display_weather_predictions
 import pandas as pd
 import os
 from datetime import datetime, timedelta
 from utils.cache_utils import save_cached_data, load_cached_data
+
+PARAMETERS = {
+    'Temperature': {
+        'column': 'T2M',
+        'color': '#FF4B4B',  # red
+        'unit': '°C'
+    },
+    'Humidity': {
+        'column': 'RH2M',
+        'color': '#4B4BFF',  # blue
+        'unit': '%'
+    },
+    'Precipitation': {
+        'column': 'PRECTOTCORR',
+        'color': '#9D4BFF',  # purple
+        'unit': 'mm/hour'
+    },
+    'Wind Speed': {
+        'column': 'WS2M',
+        'color': '#4BFF4B',  # green
+        'unit': 'm/s'
+    }
+}
 
 def cleanup_old_files(directory="data", max_age_days=7):
     """Remove files older than max_age_days from the specified directory"""
